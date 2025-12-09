@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audiobook Generator & Chat Tester</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f9; }
+        .card { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h2 { margin-top: 0; color: #333; }
+        textarea { width: 100%; height: 150px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        input[type="text"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; }
+        button { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        .status { margin-top: 10px; font-weight: bold; color: #666; }
+        #audioPlayer { width: 100%; margin-top: 15px; }
+        .step-badge { background: #e9ecef; color: #495057; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; vertical-align: middle; margin-left: 10px; }
+        
+        /* Chat Styles */
+        .chat-response { background: #f8f9fa; padding: 15px; border-left: 4px solid #007bff; margin-top: 15px; white-space: pre-wrap; }
+        .source-box { font-size: 0.85em; color: #666; background: #eee; padding: 5px; margin-top: 5px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+    <h1>🎧 AI Audiobook & Chat <span style="font-size:0.5em; color:gray">Frontend Tester</span></h1>
+
+    <div class="card">
+        <h2>1. Upload Document <span class="step-badge">/extract</span></h2>
+        <p style="font-size:0.9em; color:orange;">⚠️ Uploading automatically saves text to the Chat Memory.</p>
+        <input type="file" id="fileInput">
+        <button onclick="uploadFile()" id="btnUpload">Extract & Memorize</button>
+        <p id="uploadStatus" class="status"></p>
+    </div>
+
+    <div class="card">
+        <h2>2. Review & Enrich <span class="step-badge">/enrich</span></h2>
+        <p>Edit the text below or click "Enrich" to let AI rewrite it for audio.</p>
+        <textarea id="textContent" placeholder="Extracted text will appear here..."></textarea>
+        <br>
+        <button onclick="enrichText()" id="btnEnrich">✨ Rewrite with Gemini</button>
+        <p id="enrichStatus" class="status"></p>
+    </div>
+
+    <div class="card">
+        <h2>3. Generate Audio <span class="step-badge">/generate-audio</span></h2>
+        <label>Voice: 
+            <select id="voiceSelect">
+                <option value="en-US-JennyNeural">Jenny (US - Female)</option>
+                <option value="en-US-GuyNeural">Guy (US - Male)</option>
+                <option value="en-GB-SoniaNeural">Sonia (UK - Female)</option>
+            </select>
+        </label>
+        <button onclick="generateAudio()" id="btnAudio">🔊 Generate MP3</button>
+        <p id="audioStatus" class="status"></p>
+        <audio id="audioPlayer" controls style="display:none"></audio>
+    </div>
+
+    <div class="card">
+        <h2>4. Chat with Document <span class="step-badge">/chat</span></h2>
+        <p>Ask a question about the uploaded file.</p>
+        <input type="text" id="chatInput" placeholder="e.g., What is the main summary?">
+        <button onclick="askQuestion()" id="btnChat">Ask Question</button>
+        <div id="chatResult"></div>
+    </div>
+
+    <script>
+        const API_URL = "http://127.0.0.1:8000";
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const status = document.getElementById('uploadStatus');
+            const btn = document.getElementById('btnUpload');
+
+            if (!fileInput.files[0]) return alert("Please select a file first.");
+
+            status.textContent = "Uploading & Extracting...";
+            btn.disabled = true;
+
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+
+            try {
+                const res = await fetch(`${API_URL}/extract`, { method: 'POST', body: formData });
+                if (!res.ok) throw new Error(await res.text());
+                
+                const data = await res.json();
+                document.getElementById('textContent').value = data.extracted_text;
+                status.textContent = "✅ Extracted! (Memory updated)";
+            } catch (err) {
+                status.textContent = "❌ Error: " + err.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function enrichText() {
+            const text = document.getElementById('textContent').value;
+            const status = document.getElementById('enrichStatus');
+            const btn = document.getElementById('btnEnrich');
+
+            if (!text) return alert("No text to enrich.");
+
+            status.textContent = "AI is rewriting...";
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_URL}/enrich`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, model_name: "gemini-2.5-flash" })
+                });
+                if (!res.ok) throw new Error(await res.text());
+
+                const data = await res.json();
+                document.getElementById('textContent').value = data.enriched_text;
+                status.textContent = "✅ Text Rewritten!";
+            } catch (err) {
+                status.textContent = "❌ Error: " + err.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function generateAudio() {
+            const text = document.getElementById('textContent').value;
+            const voice = document.getElementById('voiceSelect').value;
+            const status = document.getElementById('audioStatus');
+            const player = document.getElementById('audioPlayer');
+            const btn = document.getElementById('btnAudio');
+
+            if (!text) return alert("No text to synthesize.");
+
+            status.textContent = "Generating Audio...";
+            btn.disabled = true;
+            player.style.display = 'none';
+
+            try {
+                const res = await fetch(`${API_URL}/generate-audio`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, voice: voice, rate: 180 })
+                });
+                if (!res.ok) throw new Error(await res.text());
+
+                const blob = await res.blob();
+                const audioUrl = URL.createObjectURL(blob);
+                
+                player.src = audioUrl;
+                player.style.display = 'block';
+                player.play();
+                status.textContent = "✅ Audio Ready!";
+            } catch (err) {
+                status.textContent = "❌ Error: " + err.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function askQuestion() {
+            const query = document.getElementById('chatInput').value;
+            const resultDiv = document.getElementById('chatResult');
+            const btn = document.getElementById('btnChat');
+
+            if (!query) return alert("Please type a question.");
+
+            resultDiv.innerHTML = "<p class='status'>Thinking...</p>";
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_URL}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query })
+                });
+                if (!res.ok) throw new Error(await res.text());
+
+                const data = await res.json();
+                
+                let html = `<div class="chat-response"><strong>AI Answer:</strong><br>${data.answer}</div>`;
+                
+                if (data.sources && data.sources.length > 0) {
+                    html += `<div style="margin-top:10px;"><strong>Sources Used:</strong></div>`;
+                    data.sources.forEach(src => {
+                        html += `<div class="source-box">📄 ${src.source} (Score: ${src.score.toFixed(3)})<br><em>"...${src.text}..."</em></div>`;
+                    });
+                }
+                
+                resultDiv.innerHTML = html;
+
+            } catch (err) {
+                resultDiv.innerHTML = `<p class="status" style="color:red">❌ Error: ${err.message}</p>`;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
